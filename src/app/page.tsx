@@ -146,10 +146,10 @@ export default function Journal() {
             editor.innerHTML = entry.content || '';
             setInlineContent(entry.content || '');
             
-            // Add click handlers to existing images
+            // Add click handlers to existing images in the loaded HTML content
             setTimeout(() => {
-              const images = editor.querySelectorAll('img');
-              images.forEach(img => {
+              const existingImages = editor.querySelectorAll('img');
+              existingImages.forEach(img => {
                 img.style.cursor = 'pointer';
                 img.style.transition = 'transform 0.2s ease';
                 
@@ -218,8 +218,21 @@ export default function Journal() {
   const saveJournalEntry = async () => {
     if (!user) return;
 
-    // Preserve scroll position during save
+    // Preserve cursor position and scroll position during save
     const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+    const editor = document.getElementById('inline-editor') as HTMLDivElement;
+    let cursorPosition: { node: Node; offset: number } | null = null;
+    
+    if (editor) {
+      const selection = window.getSelection();
+      if (selection && selection.rangeCount > 0) {
+        const range = selection.getRangeAt(0);
+        cursorPosition = {
+          node: range.startContainer,
+          offset: range.startOffset
+        };
+      }
+    }
 
     try {
       const dateStr = selectedDate.toISOString().split('T')[0];
@@ -235,7 +248,19 @@ export default function Journal() {
       
       // Get current HTML content from editor
       const editor = document.getElementById('inline-editor') as HTMLDivElement;
-      const currentHtmlContent = editor ? editor.innerHTML : content;
+      let currentHtmlContent = editor ? editor.innerHTML : content;
+      
+      // Replace any blob URLs with Supabase URLs in the HTML content
+      if (newAttachmentUrls.length > 0) {
+        // Get all images in the editor
+        const images = editor?.querySelectorAll('img') || [];
+        images.forEach((img, index) => {
+          // If this image has a blob URL and we have a corresponding Supabase URL
+          if (img.src.startsWith('blob:') && newAttachmentUrls[index]) {
+            currentHtmlContent = currentHtmlContent.replace(img.src, newAttachmentUrls[index]);
+          }
+        });
+      }
       
       // Combine saved attachments with new ones
       const allAttachmentUrls = [...savedAttachments, ...newAttachmentUrls];
@@ -261,27 +286,33 @@ export default function Journal() {
           })
           .eq('id', existingEntry.id);
 
-        if (!error) {
-          setLastSaved(new Date());
-          setShowSavedIndicator(true);
-          setTimeout(() => setShowSavedIndicator(false), 2000);
-          
-          // Move uploaded files to saved attachments
-          setSavedAttachments(allAttachmentUrls);
-          setAttachments([]);
-          
-          // Update cache
-          setJournalCache(prev => ({
-            ...prev,
-            [dateStr]: {
-              content: currentHtmlContent,
-              mood: selectedMood,
-              attachments: allAttachmentUrls,
-              updated_at: new Date().toISOString()
+          if (!error) {
+            setLastSaved(new Date());
+            setShowSavedIndicator(true);
+            setTimeout(() => setShowSavedIndicator(false), 2000);
+            
+            // Move uploaded files to saved attachments
+            setSavedAttachments(allAttachmentUrls);
+            setAttachments([]);
+            
+            // Update cache only if content actually changed
+            const currentCacheEntry = journalCache[dateStr];
+            if (!currentCacheEntry || 
+                currentCacheEntry.content !== currentHtmlContent || 
+                currentCacheEntry.mood !== selectedMood || 
+                JSON.stringify(currentCacheEntry.attachments) !== JSON.stringify(allAttachmentUrls)) {
+              setJournalCache(prev => ({
+                ...prev,
+                [dateStr]: {
+                  content: currentHtmlContent,
+                  mood: selectedMood,
+                  attachments: allAttachmentUrls,
+                  updated_at: new Date().toISOString()
+                }
+              }));
             }
-          }));
-          
-          console.log('Successfully updated entry for', dateStr);
+            
+            console.log('Successfully updated entry for', dateStr);
         } else {
           console.error('Error updating entry:', error);
         }
@@ -309,7 +340,7 @@ export default function Journal() {
             setSavedAttachments(allAttachmentUrls);
             setAttachments([]);
             
-            // Update cache
+            // Update cache (always update for new entries)
             setJournalCache(prev => ({
               ...prev,
               [dateStr]: {
@@ -331,7 +362,23 @@ export default function Journal() {
     } catch (error) {
       console.error('Error saving journal entry:', error);
     } finally {
-      // Restore scroll position after save
+      // Restore cursor position and scroll position after save
+      if (cursorPosition && editor) {
+        try {
+          const range = document.createRange();
+          range.setStart(cursorPosition.node, cursorPosition.offset);
+          range.setEnd(cursorPosition.node, cursorPosition.offset);
+          
+          const selection = window.getSelection();
+          selection?.removeAllRanges();
+          selection?.addRange(range);
+        } catch (error) {
+          // If cursor restoration fails, just focus the editor
+          editor.focus();
+        }
+      }
+      
+      // Restore scroll position
       window.scrollTo(0, scrollTop);
     }
   };
@@ -365,14 +412,17 @@ export default function Journal() {
           // Then clear new attachments
           setAttachments([]);
         }
-      }, [selectedDate, user, journalCache]);
+      }, [selectedDate, user]); // Removed journalCache dependency to prevent reloads during saves
 
-  // Load content into contenteditable when content changes
+  // Load content into contenteditable when content changes (only when not editing)
   useEffect(() => {
     const editor = document.getElementById('inline-editor') as HTMLDivElement;
     if (editor && content && !isUserEditing) {
-      editor.innerHTML = content;
-      setInlineContent(content);
+      // Only update if the content is actually different
+      if (editor.innerHTML !== content) {
+        editor.innerHTML = content;
+        setInlineContent(content);
+      }
     }
   }, [content, isUserEditing]);
 
@@ -479,6 +529,7 @@ export default function Journal() {
 
     const fileName = file.name;
     const isImage = file.type.startsWith('image/');
+    // Always use the provided URL if available (from Supabase), otherwise create object URL
     const fileUrl = url || URL.createObjectURL(file);
 
     if (isImage) {
@@ -844,9 +895,18 @@ export default function Journal() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center py-16 px-8" style={{ backgroundColor: 'var(--background)' }}>
-      {/* Fixed Top Right Controls */}
-      <div className="fixed top-4 right-4 z-50">
+        <div className="min-h-screen flex flex-col items-center pt-24 pb-16 px-8" style={{ backgroundColor: 'var(--background)' }}>
+          {/* Fixed Top Left Logo */}
+          <div className="fixed top-4 left-4 z-50">
+            <img 
+              src="/logo.png" 
+              alt="Auri Logo" 
+              className="h-12 w-auto transition-opacity duration-200 hover:opacity-80"
+            />
+          </div>
+
+          {/* Fixed Top Right Controls */}
+          <div className="fixed top-4 right-4 z-50">
         {/* Profile Dropdown */}
         <div className="relative profile-dropdown">
           <button
