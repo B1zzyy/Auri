@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import Auth from '@/components/Auth';
 
@@ -23,9 +23,20 @@ export default function Journal() {
   const [searchResults, setSearchResults] = useState<Array<{date: string, content: string, mood: string | null}>>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [isClosingCalendar, setIsClosingCalendar] = useState(false);
-  const [journalCache, setJournalCache] = useState<{[key: string]: {content: string, mood: string | null, updated_at: string, attachments?: string[]}}>({});
+  const [journalCache, setJournalCache] = useState<{[key: string]: {content: string, mood: string | null, updated_at: string, attachments?: string[]}}>(() => {
+    // Initialize from localStorage if available
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('journal-cache');
+      return saved ? JSON.parse(saved) : {};
+    }
+    return {};
+  });
   const [isLoadingAllEntries, setIsLoadingAllEntries] = useState(false);
+  const [isLoadingCurrentEntry, setIsLoadingCurrentEntry] = useState(false);
   const [isUserEditing, setIsUserEditing] = useState(false);
+  const [hasLoadedUserData, setHasLoadedUserData] = useState(false);
+  const [isLoadingUserData, setIsLoadingUserData] = useState(false);
+  const hasLoadedUserDataRef = useRef(false);
   const [attachments, setAttachments] = useState<File[]>([]);
   const [savedAttachments, setSavedAttachments] = useState<string[]>([]);
   const [inlineContent, setInlineContent] = useState<string>('');
@@ -38,24 +49,26 @@ export default function Journal() {
       const { data: { user } } = await supabase.auth.getUser();
       setUser(user);
       setLoading(false);
-      if (user) {
-        loadUserData(user);
-      }
+      // Don't call loadUserData here - let onAuthStateChange handle it
     };
     checkUser();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       setUser(session?.user ?? null);
-      if (session?.user) {
-        // Small delay to ensure auth state is fully settled
-        setTimeout(() => {
-          loadUserData(session.user);
-        }, 100);
-      } else {
+      if (session?.user && !hasLoadedUserDataRef.current && !isLoadingUserData) {
+        console.log('Auth state change - loading user data');
+        loadUserData(session.user);
+      } else if (!session?.user) {
         setContent('');
         setUserName('');
         setSelectedMood(null);
         setLastSaved(null);
+        setHasLoadedUserData(false);
+        setIsLoadingUserData(false);
+        setJournalCache({});
+        hasLoadedUserDataRef.current = false;
+        // Clear localStorage on logout
+        localStorage.removeItem('journal-cache');
       }
     });
 
@@ -63,33 +76,84 @@ export default function Journal() {
   }, []);
 
   const loadUserData = async (user: any) => {
+    if (hasLoadedUserDataRef.current) {
+      console.log('User data already loaded, skipping');
+      return;
+    }
+    
+    console.log('loadUserData called for user:', user.id);
+    hasLoadedUserDataRef.current = true;
+    
+    // Check if we have cache in localStorage first - if we do, load it immediately without loading states
+    const savedCache = localStorage.getItem('journal-cache');
+    if (savedCache && Object.keys(JSON.parse(savedCache)).length > 0) {
+      console.log('Using cached data from localStorage - no loading states');
+      const cache = JSON.parse(savedCache);
+      setJournalCache(cache);
+      
+      // Load user profile
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('name')
+        .eq('id', user.id)
+        .single();
+      
+      if (profile?.name && profile.name !== 'bendyakov') {
+        setUserName(profile.name);
+      } else {
+        const properName = user.user_metadata?.name || user.email?.split('@')[0] || 'User';
+        setUserName(properName);
+      }
+      
+      // Load current day from cache - no loading states
+      await loadJournalEntryFromCache(cache, user.id);
+      setHasLoadedUserData(true);
+      return;
+    }
+    
+    // Only show loading states if we don't have cache
+    console.log('No cache found, loading from database with loading states');
+    setIsLoadingUserData(true);
+    setIsLoadingCurrentEntry(true);
+    
     // Load user profile
-    const { data: profile } = await supabase
+    const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('name')
       .eq('id', user.id)
       .single();
     
-    if (profile?.name) {
+    console.log('Profile data:', profile);
+    console.log('Profile error:', profileError);
+    
+    if (profile?.name && profile.name !== 'bendyakov') {
+      console.log('Using profile name:', profile.name);
       setUserName(profile.name);
     } else {
-      // Create profile if it doesn't exist
-      const { data: newProfile } = await supabase
+      // Update profile with proper name from user metadata
+      const properName = user.user_metadata?.name || user.email?.split('@')[0] || 'User';
+      console.log('Updating profile name to:', properName);
+      
+      const { data: updatedProfile } = await supabase
         .from('profiles')
         .upsert({
           id: user.id,
-          name: user.email?.split('@')[0] || 'User',
+          name: properName,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })
         .select('name')
         .single();
       
-      setUserName(newProfile?.name || user.email?.split('@')[0] || 'User');
+      setUserName(updatedProfile?.name || properName);
     }
 
-        // Load all journal entries into cache
-        await loadAllJournalEntries(user.id);
+    const cache = await loadAllJournalEntries(user.id);
+    await loadJournalEntryFromCache(cache, user.id);
+    
+    setIsLoadingCurrentEntry(false);
+    setIsLoadingUserData(false);
+    setHasLoadedUserData(true);
   };
 
   const loadAllJournalEntries = async (userId: string) => {
@@ -103,12 +167,13 @@ export default function Journal() {
       
       if (error) {
         console.error('Error loading all journal entries:', error);
-        return;
+        return {};
       }
       
       // Create cache object with date as key
       const cache: {[key: string]: {content: string, mood: string | null, updated_at: string, attachments?: string[]}} = {};
       data?.forEach(entry => {
+        console.log('Loading entry for date:', entry.date);
         cache[entry.date] = {
           content: entry.content || '',
           mood: entry.mood,
@@ -118,16 +183,90 @@ export default function Journal() {
       });
       
       setJournalCache(cache);
+      // Save to localStorage for persistence across tab switches
+      localStorage.setItem('journal-cache', JSON.stringify(cache));
       console.log('Loaded', Object.keys(cache).length, 'journal entries into cache');
+      console.log('Cache dates:', Object.keys(cache));
+      
+      return cache;
     } catch (error) {
       console.error('Error loading all journal entries:', error);
+      return {};
     } finally {
       setIsLoadingAllEntries(false);
     }
   };
 
+  const loadJournalEntryFromCache = async (cache: {[key: string]: {content: string, mood: string | null, updated_at: string, attachments?: string[]}}, userId: string) => {
+    const dateStr = selectedDate.toISOString().split('T')[0];
+    
+    // Debug: Log what we're looking for and what's in cache
+    console.log('Looking for date:', dateStr);
+    console.log('Available cache dates:', Object.keys(cache));
+    
+    // Set editing flag to false when loading data
+    setIsUserEditing(false);
+    
+        // Check cache first
+        if (cache[dateStr]) {
+          const entry = cache[dateStr];
+          setContent(entry.content);
+          setSelectedMood(entry.mood);
+          setLastSaved(new Date(entry.updated_at));
+          setSavedAttachments(entry.attachments || []);
+          
+          // Load content into contenteditable div
+          const editor = document.getElementById('inline-editor') as HTMLDivElement;
+          if (editor) {
+            editor.innerHTML = entry.content || '';
+            setInlineContent(entry.content || '');
+            
+            // Add click handlers to existing images in the loaded HTML content
+            setTimeout(() => {
+              const existingImages = editor.querySelectorAll('img');
+              existingImages.forEach(img => {
+                img.style.cursor = 'pointer';
+                img.style.transition = 'transform 0.2s ease';
+                
+                img.onmouseenter = () => {
+                  img.style.transform = 'scale(1.02)';
+                };
+                img.onmouseleave = () => {
+                  img.style.transform = 'scale(1)';
+                };
+                
+                img.onclick = () => {
+                  openImageModal(img.src);
+                };
+              });
+            }, 100);
+          }
+          
+          console.log('Loaded entry from cache for', dateStr);
+          return;
+        }
+        
+        // If no cache entry, clear content and mood
+        setContent('');
+        setSelectedMood(null);
+        setLastSaved(null);
+        setSavedAttachments([]);
+        
+        // Clear the contenteditable div
+        const editor = document.getElementById('inline-editor') as HTMLDivElement;
+        if (editor) {
+          editor.innerHTML = '';
+        }
+        
+        console.log('No cache entry for', dateStr, '- cleared content and mood');
+  };
+
   const loadJournalEntry = async (userId: string) => {
     const dateStr = selectedDate.toISOString().split('T')[0];
+    
+    // Debug: Log what we're looking for and what's in cache
+    console.log('Looking for date:', dateStr);
+    console.log('Available cache dates:', Object.keys(journalCache));
     
     // Set editing flag to false when loading data
     setIsUserEditing(false);
@@ -301,15 +440,18 @@ export default function Journal() {
                 currentCacheEntry.content !== currentHtmlContent || 
                 currentCacheEntry.mood !== selectedMood || 
                 JSON.stringify(currentCacheEntry.attachments) !== JSON.stringify(allAttachmentUrls)) {
-              setJournalCache(prev => ({
-                ...prev,
+              const newCache = {
+                ...journalCache,
                 [dateStr]: {
                   content: currentHtmlContent,
                   mood: selectedMood,
                   attachments: allAttachmentUrls,
                   updated_at: new Date().toISOString()
                 }
-              }));
+              };
+              setJournalCache(newCache);
+              // Save to localStorage
+              localStorage.setItem('journal-cache', JSON.stringify(newCache));
             }
             
             console.log('Successfully updated entry for', dateStr);
@@ -341,15 +483,18 @@ export default function Journal() {
             setAttachments([]);
             
             // Update cache (always update for new entries)
-            setJournalCache(prev => ({
-              ...prev,
+            const newCache = {
+              ...journalCache,
               [dateStr]: {
                 content: currentHtmlContent || '',
                 mood: selectedMood,
                 attachments: allAttachmentUrls,
                 updated_at: new Date().toISOString()
               }
-            }));
+            };
+            setJournalCache(newCache);
+            // Save to localStorage
+            localStorage.setItem('journal-cache', JSON.stringify(newCache));
             
             console.log('Successfully inserted entry for', dateStr);
           } else {
@@ -404,15 +549,18 @@ export default function Journal() {
     return () => clearTimeout(saveTimeout);
   }, [content, selectedMood, attachments, savedAttachments, user, isUserEditing]);
 
-      // Load journal entry when date changes or user changes
+      // Load journal entry when date changes (user loading is handled in loadUserData)
       useEffect(() => {
         if (user) {
+          setIsLoadingCurrentEntry(true);
           // Load from cache first (this will set savedAttachments)
-          loadJournalEntry(user.id);
+          loadJournalEntry(user.id).then(() => {
+            setIsLoadingCurrentEntry(false);
+          });
           // Then clear new attachments
           setAttachments([]);
         }
-      }, [selectedDate, user]); // Removed journalCache dependency to prevent reloads during saves
+      }, [selectedDate]); // Only trigger on date changes, not user changes
 
   // Load content into contenteditable when content changes (only when not editing)
   useEffect(() => {
@@ -425,6 +573,31 @@ export default function Journal() {
       }
     }
   }, [content, isUserEditing]);
+
+  // Handle visibility change to restore content when tab becomes active
+  useEffect(() => {
+    let lastVisibilityChange = 0;
+    
+    const handleVisibilityChange = () => {
+      const now = Date.now();
+      // Throttle to prevent excessive calls
+      if (now - lastVisibilityChange < 1000) return;
+      lastVisibilityChange = now;
+      
+      if (!document.hidden && user && content) {
+        const editor = document.getElementById('inline-editor') as HTMLDivElement;
+        if (editor && editor.innerHTML !== content && editor.innerHTML.trim() === '') {
+          // Only restore if editor is actually empty, not just different
+          console.log('Restoring content on visibility change');
+          editor.innerHTML = content;
+          setInlineContent(content);
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [content, user]);
 
 
 
@@ -875,7 +1048,7 @@ export default function Journal() {
   }, [searchQuery]);
 
   if (loading) {
-    return (
+  return (
       <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'var(--background)' }}>
         <div 
           className="text-lg"
@@ -1231,6 +1404,14 @@ export default function Journal() {
                       setContent(newContent);
                       setIsUserEditing(true);
                     }}
+                    onFocus={() => {
+                      // Restore content if it's missing when focused
+                      const editor = document.getElementById('inline-editor') as HTMLDivElement;
+                      if (editor && content && editor.innerHTML !== content) {
+                        editor.innerHTML = content;
+                        setInlineContent(content);
+                      }
+                    }}
                     className="w-full min-h-80 text-lg leading-relaxed custom-cursor text-left"
                     style={{ 
                       color: 'var(--card-foreground)',
@@ -1441,7 +1622,7 @@ export default function Journal() {
                               style={{ backgroundColor: moodColors[result.mood] || 'var(--muted-foreground)' }}
                             />
                           )}
-                        </div>
+        </div>
                         <p className="text-sm line-clamp-2" style={{ color: 'var(--foreground)' }}>
                           {result.content.length > 100 
                             ? `${result.content.substring(0, 100)}...` 
