@@ -37,6 +37,7 @@ export default function Journal() {
   const [hasLoadedUserData, setHasLoadedUserData] = useState(false);
   const [isLoadingUserData, setIsLoadingUserData] = useState(false);
   const hasLoadedUserDataRef = useRef(false);
+  const isSavingRef = useRef(false);
   const [attachments, setAttachments] = useState<File[]>([]);
   const [savedAttachments, setSavedAttachments] = useState<string[]>([]);
   const [inlineContent, setInlineContent] = useState<string>('');
@@ -530,24 +531,28 @@ export default function Journal() {
 
   // Auto-save functionality
   useEffect(() => {
-    if (!user || !isUserEditing) return;
+    if (!user || !isUserEditing || isSavingRef.current) return;
 
     const saveTimeout = setTimeout(() => {
+      if (isSavingRef.current) return; // Double check to prevent multiple saves
+      
       // Preserve scroll position before any state changes
       const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
       
+      isSavingRef.current = true;
       setIsSaving(true);
       saveJournalEntry();
       
       setTimeout(() => {
         setIsSaving(false);
+        isSavingRef.current = false;
         // Restore scroll position after state changes
         window.scrollTo(0, scrollTop);
       }, 500);
     }, 2500);
 
     return () => clearTimeout(saveTimeout);
-  }, [content, selectedMood, attachments, savedAttachments, user, isUserEditing]);
+  }, [content, selectedMood, attachments, user, isUserEditing]); // Removed savedAttachments to prevent infinite loop
 
       // Load journal entry when date changes (user loading is handled in loadUserData)
       useEffect(() => {
