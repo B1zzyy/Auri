@@ -416,6 +416,8 @@ export default function Journal() {
       
       // Combine saved attachments with new ones
       const allAttachmentUrls = [...savedAttachments, ...newAttachmentUrls];
+      // Derive plain text to determine if there's meaningful content
+      const plainTextContent = stripHtml(currentHtmlContent || '').trim();
       
       // First, try to update existing entry
       const { data: existingEntry } = await supabase
@@ -426,6 +428,35 @@ export default function Journal() {
         .single();
 
       if (existingEntry) {
+        // If user cleared everything (no text and no attachments), remove the day entirely
+        if (plainTextContent.length === 0 && allAttachmentUrls.length === 0) {
+          console.log('Deleting empty entry for', dateStr);
+          const { error: deleteError } = await supabase
+            .from('journal_entries')
+            .delete()
+            .eq('id', existingEntry.id);
+
+          if (!deleteError) {
+            // Remove from cache and localStorage
+            const { [dateStr]: _removed, ...rest } = journalCache;
+            setJournalCache(rest);
+            localStorage.setItem('journal-cache', JSON.stringify(rest));
+
+            // Clear local states for the day
+            setContent('');
+            setInlineContent('');
+            setSavedAttachments([]);
+            setAttachments([]);
+            setSelectedMood(null);
+            setLastSaved(new Date());
+            setShowSavedIndicator(true);
+            setTimeout(() => setShowSavedIndicator(false), 2000);
+          } else {
+            console.error('Error deleting empty entry:', deleteError);
+          }
+          return;
+        }
+
         // Update existing entry
         console.log('Updating existing entry for', dateStr);
         const { error } = await supabase
@@ -472,8 +503,8 @@ export default function Journal() {
           console.error('Error updating entry:', error);
         }
       } else {
-        // Insert new entry if there's content OR a mood selected OR attachments
-        if (content.trim() || selectedMood || allAttachmentUrls.length > 0) {
+        // Insert new entry only if there is meaningful content or attachments (mood-only should not create an entry)
+        if (plainTextContent.length > 0 || allAttachmentUrls.length > 0) {
           console.log('Inserting new entry for', dateStr);
           const { error } = await supabase
             .from('journal_entries')
@@ -514,7 +545,7 @@ export default function Journal() {
             console.error('Error inserting entry:', error);
           }
         } else {
-          console.log('No content, mood, or attachments to save for', dateStr);
+          console.log('Skipped saving: mood-only with no content/attachments for', dateStr);
         }
       }
     } catch (error) {
