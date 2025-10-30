@@ -1014,6 +1014,54 @@ export default function Journal() {
     closeCalendar();
   };
 
+  // Helper function to strip HTML tags and get plain text
+  const stripHtml = (html: string) => {
+    const temp = document.createElement('div');
+    temp.innerHTML = html;
+    return temp.textContent || temp.innerText || '';
+  };
+
+  // Helper function to get context around search term
+  const getSearchContext = (text: string, query: string, contextLength: number = 50) => {
+    const lowerText = text.toLowerCase();
+    const lowerQuery = query.toLowerCase();
+    const index = lowerText.indexOf(lowerQuery);
+    
+    if (index === -1) {
+      console.log('Search term not found in text:', query, 'in:', text.substring(0, 100));
+      return text.substring(0, 100) + '...'; // Fallback to first 100 chars
+    }
+    
+    console.log('Found search term at index:', index, 'in text:', text.substring(Math.max(0, index - 20), index + 20));
+    
+    const start = Math.max(0, index - contextLength);
+    const end = Math.min(text.length, index + query.length + contextLength);
+    
+    let context = text.substring(start, end);
+    
+    // Add ellipsis if we're not at the beginning/end
+    if (start > 0) context = '...' + context;
+    if (end < text.length) context = context + '...';
+    
+    console.log('Context extracted:', context);
+    return context;
+  };
+
+  // Helper function to highlight search terms
+  const highlightSearchTerm = (text: string, query: string) => {
+    // Escape special regex characters in the query
+    const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`(${escapedQuery})`, 'gi');
+    const highlighted = text.replace(regex, '<span style="color: var(--primary); font-weight: 600;">$1</span>');
+    
+    console.log('Highlighting query:', query);
+    console.log('Escaped query:', escapedQuery);
+    console.log('Original text:', text);
+    console.log('Highlighted result:', highlighted);
+    
+    return highlighted;
+  };
+
   const searchJournalEntries = async (query: string) => {
     if (!query.trim()) {
       setSearchResults([]);
@@ -1024,14 +1072,26 @@ export default function Journal() {
     
     // Search through cache instead of database
     const results = Object.entries(journalCache)
-      .filter(([date, entry]) => 
-        entry.content.toLowerCase().includes(query.toLowerCase())
-      )
-      .map(([date, entry]) => ({
-        date,
-        content: entry.content,
-        mood: entry.mood
-      }))
+      .filter(([date, entry]) => {
+        const plainText = stripHtml(entry.content);
+        return plainText.toLowerCase().includes(query.toLowerCase());
+      })
+      .map(([date, entry]) => {
+        const plainText = stripHtml(entry.content);
+        const context = getSearchContext(plainText, query);
+        const highlightedContext = highlightSearchTerm(context, query);
+        
+        // Debug: Log the highlighting
+        console.log('Query:', query);
+        console.log('Context:', context);
+        console.log('Highlighted:', highlightedContext);
+        
+        return {
+          date,
+          content: highlightedContext, // Return highlighted context
+          mood: entry.mood
+        };
+      })
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     setSearchResults(results);
@@ -1607,10 +1667,18 @@ export default function Journal() {
                           setSelectedDate(date);
                           closeCalendar();
                         }}
-                        className="w-full p-3 rounded-lg text-left transition-colors hover:bg-opacity-10"
+                        className="w-full p-3 rounded-lg text-left transition-all duration-200 hover:shadow-md cursor-pointer"
                         style={{ 
                           backgroundColor: 'var(--muted)',
                           color: 'var(--foreground)'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = 'var(--accent)';
+                          e.currentTarget.style.color = 'var(--accent-foreground)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = 'var(--muted)';
+                          e.currentTarget.style.color = 'var(--foreground)';
                         }}
                       >
                         <div className="flex items-center justify-between mb-1">
@@ -1628,12 +1696,13 @@ export default function Journal() {
                             />
                           )}
         </div>
-                        <p className="text-sm line-clamp-2" style={{ color: 'var(--foreground)' }}>
-                          {result.content.length > 100 
-                            ? `${result.content.substring(0, 100)}...` 
-                            : result.content
-                          }
-                        </p>
+                        <p 
+                          className="text-sm line-clamp-2" 
+                          style={{ color: 'var(--foreground)' }}
+                          dangerouslySetInnerHTML={{ 
+                            __html: result.content
+                          }}
+                        />
                       </button>
                     ))
                   ) : (
