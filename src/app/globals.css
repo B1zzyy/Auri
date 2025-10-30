@@ -273,3 +273,90 @@ body {
       border-radius: 8px;
       max-width: 200px;
     }
+
+
+    /* Force fixed positioning - NO EXCEPTIONS */
+    .force-fixed {
+      position: fixed !important;
+      z-index: 999999 !important;
+      transform: none !important;
+      will-change: auto !important;
+    }
+
+    /* Mobile responsiveness */
+    @media (max-width: 640px) {
+      .inline-attachment img {
+        max-width: 150px;
+        max-height: 120px;
+      }
+      
+      .inline-attachment .file-card {
+        max-width: 150px;
+        padding: 6px 8px;
+        font-size: 0.875rem;
+      }
+      
+      /* Ensure text doesn't overflow on mobile */
+      #inline-editor {
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+      }
+      
+      /* Better touch targets for mobile */
+      button {
+        min-height: 44px;
+        min-width: 44px;
+      }
+      
+      /* Adjust calendar popup for mobile */
+      .calendar-popup {
+        max-height: 90vh;
+        overflow-y: auto;
+      }
+      
+      /* Mobile calendar navigation - ensure everything fits */
+      .calendar-navigation {
+        max-width: 100vw;
+        overflow-x: hidden;
+        overflow-y: visible;
+      }
+      
+      /* Ensure calendar days don't overflow on mobile */
+      .calendar-days-container {
+        overflow-x: hidden;
+        overflow-y: visible;
+        flex-shrink: 0;
+      }
+    }
+
+/* Subtle pulse to draw attention to actionable elements */
+@keyframes subtlePulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.035); }
+  100% { transform: scale(1); }
+}
+
+.mood-pulse {
+  animation: subtlePulse 1.4s ease-in-out infinite;
+}
+
+/* Journal editor entrance animation */
+@keyframes editorEnter {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.995);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(0) scale(1.002);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.editor-appear {
+  animation: editorEnter 280ms ease-out both;
+  will-change: opacity, transform;
+}

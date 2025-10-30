@@ -36,6 +36,7 @@ export default function Journal() {
   const [isUserEditing, setIsUserEditing] = useState(false);
   const [hasLoadedUserData, setHasLoadedUserData] = useState(false);
   const [isLoadingUserData, setIsLoadingUserData] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const hasLoadedUserDataRef = useRef(false);
   const isSavingRef = useRef(false);
   const [attachments, setAttachments] = useState<File[]>([]);
@@ -43,6 +44,17 @@ export default function Journal() {
   const [inlineContent, setInlineContent] = useState<string>('');
   const [showImageModal, setShowImageModal] = useState(false);
   const [modalImageUrl, setModalImageUrl] = useState<string>('');
+
+  // Mobile detection
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 640);
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // Check authentication status
   useEffect(() => {
@@ -919,8 +931,10 @@ export default function Journal() {
   const getDaysInWeek = () => {
     const days = [];
     
-    // Get 3 days before selected date, selected date, and 3 days after selected date
-    for (let i = -3; i <= 3; i++) {
+    // On mobile, show 5 days (2 before, selected, 2 after). On desktop, show 7 days (3 before, selected, 3 after)
+    const range = isMobile ? 2 : 3;
+    
+    for (let i = -range; i <= range; i++) {
       const day = new Date(selectedDate);
       day.setDate(selectedDate.getDate() + i);
       days.push(day);
@@ -1133,23 +1147,22 @@ export default function Journal() {
   }
 
   return (
-        <div className="min-h-screen flex flex-col items-center pt-24 pb-16 px-8" style={{ backgroundColor: 'var(--background)' }}>
-          {/* Fixed Top Left Logo */}
-          <div className="fixed top-4 left-4 z-50">
-            <img 
-              src="/logo.png" 
-              alt="Auri Logo" 
-              className="h-12 w-auto transition-opacity duration-200 hover:opacity-80"
-            />
-          </div>
+    <>
+      {/* Top Header (scrolls with page) */}
+      <div className="w-full flex items-center justify-between px-4 sm:px-8 pt-3 sm:pt-4">
+        <div>
+          <img 
+            src="/logo.png" 
+            alt="Auri Logo" 
+            className="h-8 sm:h-12 w-auto transition-opacity duration-200 hover:opacity-80"
+          />
+        </div>
 
-          {/* Fixed Top Right Controls */}
-          <div className="fixed top-4 right-4 z-50">
         {/* Profile Dropdown */}
         <div className="relative profile-dropdown">
           <button
             onClick={() => setShowProfileDropdown(!showProfileDropdown)}
-            className="w-12 h-12 rounded-full transition-all duration-200 hover:scale-105 flex items-center justify-center"
+            className="w-10 h-10 sm:w-12 sm:h-12 rounded-full transition-all duration-200 hover:scale-105 flex items-center justify-center"
             style={{ 
               backgroundColor: 'var(--primary)',
               color: 'var(--primary-foreground)'
@@ -1163,7 +1176,7 @@ export default function Journal() {
                 className="w-10 h-10 rounded-full object-cover"
               />
             ) : (
-              <span className="text-lg font-semibold">
+              <span className="text-sm sm:text-lg font-semibold">
                 {user?.email?.charAt(0).toUpperCase() || 'U'}
               </span>
             )}
@@ -1172,7 +1185,7 @@ export default function Journal() {
           {/* Dropdown Menu */}
           {showProfileDropdown && (
             <div 
-              className="absolute right-0 mt-2 w-64 rounded-lg shadow-lg z-50"
+              className="absolute right-0 mt-2 w-72 sm:w-64 rounded-lg shadow-lg z-50"
               style={{ 
                 backgroundColor: 'var(--card)',
                 border: '1px solid var(--border)',
@@ -1264,9 +1277,11 @@ export default function Journal() {
         </div>
       </div>
 
-      <div className="max-w-4xl w-full">
+      {/* Main Content Container */}
+      <div className="min-h-screen flex flex-col items-center pt-24 sm:pt-24 pb-8 sm:pb-16 px-4 sm:px-8" style={{ backgroundColor: 'var(--background)' }}>
+        <div className="max-w-4xl w-full px-2 sm:px-0">
         {/* Header */}
-        <div className="text-center mb-16">
+        <div className="text-center mb-8 sm:mb-16">
           
           <div className="mb-4">
             {isEditingName ? (
@@ -1280,13 +1295,13 @@ export default function Journal() {
                     handleNameChange(userName);
                   }
                 }}
-                className="text-4xl font-light bg-transparent border-none outline-none text-center"
+                className="text-2xl sm:text-4xl font-light bg-transparent border-none outline-none text-center w-full"
                 style={{ color: 'var(--foreground)' }}
                 autoFocus
               />
             ) : (
               <h1 
-                className="text-4xl font-light cursor-pointer transition-colors"
+                className="text-2xl sm:text-4xl font-light cursor-pointer transition-colors"
                 style={{ color: 'var(--foreground)' }}
                 onClick={() => setIsEditingName(true)}
               >
@@ -1294,34 +1309,36 @@ export default function Journal() {
           </h1>
             )}
           </div>
-          <p className="text-xl" style={{ color: 'var(--muted-foreground)' }}>{formatDate(selectedDate)}</p>
+          <p className="text-lg sm:text-xl" style={{ color: 'var(--muted-foreground)' }}>{formatDate(selectedDate)}</p>
         </div>
 
         {/* Date Navigation */}
-        <div className="flex flex-col items-center mb-16">
-          <div className="flex items-center gap-4 mb-4">
+        <div className="flex flex-col items-center mb-8 sm:mb-16 calendar-navigation">
+          <div className="flex items-center gap-2 sm:gap-4 mb-4 calendar-days-container w-full justify-center py-2">
             {/* Previous Day Arrow */}
             <button
               onClick={goToPreviousDay}
-              className="p-3 rounded-full transition-all duration-200 cursor-pointer hover:scale-105 hover:bg-opacity-10"
+              className="p-1.5 sm:p-3 rounded-full transition-all duration-200 cursor-pointer hover:scale-105 hover:bg-opacity-10 flex items-center justify-center flex-shrink-0"
               style={{ 
                 backgroundColor: 'var(--muted)',
-                color: 'var(--foreground)'
+                color: 'var(--foreground)',
+                minWidth: '40px',
+                minHeight: '40px'
               }}
               title="Previous day"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-3 h-3 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
             </button>
 
             {/* Calendar Days */}
-            <div className="flex gap-3 items-center">
+            <div className="flex gap-1 sm:gap-3 items-center flex-shrink-0 overflow-visible">
               {getDaysInWeek().map((day, index) => {
                 const today = new Date();
                 const isToday = day.toDateString() === today.toDateString();
                 const isSelected = day.toDateString() === selectedDate.toDateString();
-                const isCenter = index === 3; // Center position (selected date)
+                const isCenter = isMobile ? index === 2 : index === 3; // Center position (selected date)
                 const isFuture = day > today;
                 const isPast = day < today;
                 
@@ -1330,17 +1347,15 @@ export default function Journal() {
                     key={index}
                     onClick={() => !isFuture && setSelectedDate(day)}
                     disabled={isFuture}
-                    className={`rounded-xl transition-all duration-300 flex flex-col items-center justify-center ${
+                    className={`${isCenter ? 'w-14 h-14 sm:w-20 sm:h-20' : 'w-11 h-11 sm:w-15 sm:h-15'} rounded-xl transition-all duration-300 flex flex-col items-center justify-center overflow-visible ${
                       isFuture ? 'cursor-default' : 'cursor-pointer hover:scale-105'
                     }`}
                     style={{
-                      width: isCenter ? '80px' : '60px',
-                      height: isCenter ? '80px' : '60px',
                       backgroundColor: isSelected ? 'var(--accent)' : 'transparent',
                       border: isSelected ? '2px solid var(--border)' : '1px solid var(--border)',
                       boxShadow: isSelected ? 'var(--shadow-lg)' : isCenter ? 'var(--shadow-md)' : 'none',
                       opacity: isFuture ? 0.5 : isPast ? 0.8 : 1,
-                      transform: isCenter ? 'scale(1.1)' : 'scale(1)'
+                      transform: 'scale(1)'
                     }}
                   >
                     <span 
@@ -1368,18 +1383,20 @@ export default function Journal() {
             <button
               onClick={goToNextDay}
               disabled={selectedDate.toDateString() === new Date().toDateString()}
-              className={`p-3 rounded-full transition-all duration-200 ${
+              className={`p-1.5 sm:p-3 rounded-full transition-all duration-200 flex items-center justify-center flex-shrink-0 ${
                 selectedDate.toDateString() === new Date().toDateString() 
                   ? 'cursor-default opacity-50' 
                   : 'cursor-pointer hover:scale-105 hover:bg-opacity-10'
               }`}
               style={{ 
                 backgroundColor: 'var(--muted)',
-                color: 'var(--foreground)'
+                color: 'var(--foreground)',
+                minWidth: '40px',
+                minHeight: '40px'
               }}
               title={selectedDate.toDateString() === new Date().toDateString() ? "Cannot go to future days" : "Next day"}
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-3 h-3 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
             </button>
@@ -1388,28 +1405,30 @@ export default function Journal() {
           {/* Calendar Button */}
           <button
             onClick={openCalendar}
-            className="p-3 rounded-full transition-all duration-200 cursor-pointer hover:scale-105 hover:bg-opacity-10"
+            className="p-1.5 sm:p-3 rounded-full transition-all duration-200 cursor-pointer hover:scale-105 hover:bg-opacity-10 flex items-center justify-center flex-shrink-0"
             style={{ 
               backgroundColor: 'var(--muted)',
-              color: 'var(--foreground)'
+              color: 'var(--foreground)',
+              minWidth: '40px',
+              minHeight: '40px'
             }}
             title="Open calendar"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
           </button>
         </div>
 
         {/* Mood Selector */}
-        <div className="text-center mb-16">
+        <div className="text-center mb-8 sm:mb-16">
           <h2 
-            className="text-xl font-medium mb-8"
-            style={{ color: 'var(--foreground)' }}
+            className="text-lg sm:text-xl font-medium mb-6 sm:mb-8"
+            style={{ color: 'var(--muted-foreground)' }}
           >
-            How do you feel today?
+            How are you feeling today?
           </h2>
-          <div className="flex justify-center gap-8">
+          <div className="flex justify-center gap-2 sm:gap-8 flex-wrap">
             {moods.map((mood) => (
               <button
                 key={mood.label}
@@ -1417,15 +1436,17 @@ export default function Journal() {
                       setSelectedMood(mood.label);
                       setIsUserEditing(true);
                     }}
-                className="flex flex-col items-center gap-3 p-4 rounded-xl transition-all duration-200"
+                className={`flex flex-col items-center gap-2 sm:gap-3 p-3 sm:p-4 rounded-xl transition-all duration-200 cursor-pointer ${!selectedMood ? 'mood-pulse' : ''}`}
                 style={{
                   backgroundColor: selectedMood === mood.label ? 'var(--accent)' : 'transparent',
-                  boxShadow: selectedMood === mood.label ? 'var(--shadow-sm)' : 'none'
+                  boxShadow: selectedMood === mood.label ? 'var(--shadow-sm)' : (!selectedMood ? '0 0 0 2px var(--accent)' : 'none')
                 }}
+                title={!selectedMood ? 'Choose a mood to proceed' : mood.label}
+                aria-label={`Mood: ${mood.label}`}
               >
-                <span className="text-3xl">{mood.emoji}</span>
+                <span className="text-2xl sm:text-3xl">{mood.emoji}</span>
                 <span 
-                  className="text-base font-medium"
+                  className="text-sm sm:text-base font-medium"
                   style={{ color: 'var(--foreground)' }}
                 >
                   {mood.label}
@@ -1435,28 +1456,31 @@ export default function Journal() {
           </div>
         </div>
 
-        {/* Line Break */}
-        <div className="mb-16">
-          <hr style={{ borderColor: 'var(--border)', opacity: 0.3 }} />
-        </div>
+        {/* Step gating: Only show writing area after a mood is selected */}
+        {selectedMood ? (
+          <>
+            {/* Line Break */}
+            <div className="mb-8 sm:mb-16">
+              <hr style={{ borderColor: 'var(--border)', opacity: 0.3 }} />
+            </div>
 
             {/* Writing Area */}
-            <div className="text-center mb-16">
+            <div className="text-center mb-8 sm:mb-16 editor-appear">
               <h2 
-                className="text-xl font-medium mb-8"
+                className="text-lg sm:text-xl font-medium mb-6 sm:mb-8"
                 style={{ color: 'var(--muted-foreground)' }}
               >
                 Take a moment to reflect
               </h2>
               <div 
-                className="rounded-2xl shadow-sm relative"
+                className="rounded-2xl shadow-sm relative editor-appear"
                 style={{ 
                   backgroundColor: 'var(--card)',
                   border: '1px solid var(--border)'
                 }}
               >
                 {/* Rich Text Editor Container */}
-                <div className="p-8">
+                <div className="p-4 sm:p-8">
                   {/* Inline Content Editor */}
                   <div
                     id="inline-editor"
@@ -1477,7 +1501,7 @@ export default function Journal() {
                         setInlineContent(content);
                       }
                     }}
-                    className="w-full min-h-80 text-lg leading-relaxed custom-cursor text-left"
+                    className="w-full min-h-60 sm:min-h-80 text-base sm:text-lg leading-relaxed custom-cursor text-left"
                     style={{ 
                       color: 'var(--card-foreground)',
                       fontFamily: 'var(--font-sans)',
@@ -1494,9 +1518,9 @@ export default function Journal() {
           </div>
 
           {/* Bottom Toolbar */}
-          <div className="flex items-center justify-between mt-4 px-2">
+          <div className="flex items-center justify-between mt-4 px-2 editor-appear">
             {/* Left side - Toolbar buttons */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 sm:gap-3">
               {/* Attach Files */}
               <button
                 onClick={() => {
@@ -1530,51 +1554,53 @@ export default function Journal() {
                   };
                   input.click();
                 }}
-                className="p-2 rounded-lg transition-all duration-200 hover:scale-105 hover:bg-opacity-10"
+                className="p-2 rounded-lg transition-all duration-200 hover:scale-105 hover:bg-opacity-10 flex items-center justify-center"
                 style={{ 
                   backgroundColor: 'var(--muted)',
                   color: 'var(--muted-foreground)'
                 }}
                 title="Attach files (images, documents, etc.)"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
                 </svg>
               </button>
 
               {/* Dictation (Microphone) */}
               <button
-                className="p-2 rounded-lg transition-all duration-200 hover:scale-105 hover:bg-opacity-10"
+                className="p-1.5 sm:p-2 rounded-lg transition-all duration-200 hover:scale-105 hover:bg-opacity-10 flex items-center justify-center"
                 style={{ 
                   backgroundColor: 'var(--muted)',
                   color: 'var(--muted-foreground)'
                 }}
                 title="Voice dictation (coming soon)"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                 </svg>
               </button>
             </div>
 
             {/* Right side - Save indicator */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 sm:gap-2">
               {isSaving ? (
                 <div className="flex items-center gap-2">
                   <div className="animate-spin w-4 h-4 border-2 border-current border-t-transparent rounded-full" style={{ color: 'var(--primary)' }}></div>
-                  <span className="text-sm" style={{ color: 'var(--muted-foreground)' }}>Saving...</span>
+                  <span className="text-xs sm:text-sm" style={{ color: 'var(--muted-foreground)' }}>Saving...</span>
                 </div>
               ) : showSavedIndicator ? (
                 <div className="flex items-center gap-2">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: 'var(--primary)' }}>
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                   </svg>
-                  <span className="text-sm" style={{ color: 'var(--primary)' }}>Saved</span>
+                  <span className="text-xs sm:text-sm" style={{ color: 'var(--primary)' }}>Saved</span>
                 </div>
               ) : null}
             </div>
           </div>
         </div>
+          </>
+        ) : null}
 
         {/* Footer */}
         <div className="text-center space-y-3">
@@ -1593,7 +1619,7 @@ export default function Journal() {
           isClosingCalendar ? 'calendar-backdrop-exit' : 'calendar-backdrop-enter'
         }`}>
           <div 
-            className={`calendar-popup bg-white rounded-2xl p-6 max-w-md w-full mx-4 ${
+            className={`calendar-popup bg-white rounded-2xl p-4 sm:p-6 max-w-md w-full mx-2 sm:mx-4 ${
               isClosingCalendar ? 'calendar-popup-exit' : 'calendar-popup-enter'
             }`}
             style={{ 
@@ -1603,9 +1629,9 @@ export default function Journal() {
             }}
           >
             {/* Calendar Header */}
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center justify-between mb-4 sm:mb-6">
               <h2 
-                className="text-xl font-semibold"
+                className="text-lg sm:text-xl font-semibold"
                 style={{ color: 'var(--foreground)' }}
               >
                 {selectedDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
@@ -1629,14 +1655,14 @@ export default function Journal() {
                   placeholder="Search your journal entries..."
                   value={searchQuery}
                   onChange={handleSearchChange}
-                  className="w-full p-3 pl-10 rounded-lg border-none outline-none text-sm"
+                  className="w-full p-2 sm:p-3 pl-8 sm:pl-10 rounded-lg border-none outline-none text-sm"
                   style={{ 
                     backgroundColor: 'var(--input)',
                     color: 'var(--foreground)',
                     fontFamily: 'var(--font-sans)'
                   }}
                 />
-                <div className="absolute left-3 top-1/2 transform -translate-y-1/2">
+                <div className="absolute left-2 sm:left-3 top-1/2 transform -translate-y-1/2">
                   {isSearching ? (
                     <div className="animate-spin w-4 h-4 border-2 border-current border-t-transparent rounded-full" style={{ color: 'var(--muted-foreground)' }}></div>
                   ) : (
@@ -1667,7 +1693,7 @@ export default function Journal() {
                           setSelectedDate(date);
                           closeCalendar();
                         }}
-                        className="w-full p-3 rounded-lg text-left transition-all duration-200 hover:shadow-md cursor-pointer"
+                        className="w-full p-2 sm:p-3 rounded-lg text-left transition-all duration-200 hover:shadow-md cursor-pointer"
                         style={{ 
                           backgroundColor: 'var(--muted)',
                           color: 'var(--foreground)'
@@ -1710,7 +1736,7 @@ export default function Journal() {
                       {isSearching ? 'Searching...' : 'No entries found'}
                     </p>
                   )}
-                </div>
+    </div>
               </div>
             )}
 
@@ -1720,7 +1746,7 @@ export default function Journal() {
               {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
                 <div 
                   key={day}
-                  className="text-center text-sm font-medium p-2"
+                  className="text-center text-xs sm:text-sm font-medium p-1 sm:p-2"
                   style={{ color: 'var(--muted-foreground)' }}
                 >
                   {day}
@@ -1730,7 +1756,7 @@ export default function Journal() {
               {/* Calendar days */}
               {getCalendarDays(selectedDate.getFullYear(), selectedDate.getMonth()).map((day, index) => {
                 if (!day) {
-                  return <div key={index} className="h-10" />;
+                  return <div key={index} className="h-8 sm:h-10" />;
                 }
                 
                 const dayStr = day.toISOString().split('T')[0];
@@ -1744,7 +1770,7 @@ export default function Journal() {
                     key={index}
                     onClick={() => !isFuture && selectDateFromCalendar(day)}
                     disabled={isFuture}
-                    className={`relative h-10 w-10 rounded-lg transition-all duration-200 flex flex-col items-center justify-center ${
+                    className={`relative h-8 w-8 sm:h-10 sm:w-10 rounded-lg transition-all duration-200 flex flex-col items-center justify-center ${
                       isFuture ? 'cursor-default opacity-50' : 'cursor-pointer hover:scale-105'
                     }`}
                     style={{
@@ -1753,10 +1779,10 @@ export default function Journal() {
                       color: isFuture ? 'var(--muted-foreground)' : 'var(--foreground)'
                     }}
                   >
-                    <span className="text-sm font-medium mb-1">{day.getDate()}</span>
+                    <span className="text-xs sm:text-sm font-medium mb-0.5 sm:mb-1">{day.getDate()}</span>
                     {mood && (
                       <div
-                        className="w-2 h-2 rounded-full"
+                        className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full"
                         style={{ backgroundColor: moodColors[mood] || 'var(--muted-foreground)' }}
                       />
                     )}
@@ -1827,6 +1853,7 @@ export default function Journal() {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </>
   );
 }
