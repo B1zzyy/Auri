@@ -44,6 +44,9 @@ export default function Journal() {
   const [inlineContent, setInlineContent] = useState<string>('');
   const [showImageModal, setShowImageModal] = useState(false);
   const [modalImageUrl, setModalImageUrl] = useState<string>('');
+  const [showMoodAnalytics, setShowMoodAnalytics] = useState(false);
+  const [showMonthSelector, setShowMonthSelector] = useState(false);
+  const [accountCreationDate, setAccountCreationDate] = useState<Date | null>(null);
 
   // Mobile detection
   useEffect(() => {
@@ -120,6 +123,10 @@ export default function Journal() {
       
       // Load current day from cache - no loading states
       await loadJournalEntryFromCache(cache, user.id);
+      
+      // Set account creation date to October 2025 (app start date)
+      setAccountCreationDate(new Date(2025, 9, 1)); // October 2025 (month 9 = October)
+      
       setHasLoadedUserData(true);
       return;
     }
@@ -163,6 +170,9 @@ export default function Journal() {
 
     const cache = await loadAllJournalEntries(user.id);
     await loadJournalEntryFromCache(cache, user.id);
+    
+    // Set account creation date to October 2025 (app start date)
+    setAccountCreationDate(new Date(2025, 9, 1)); // October 2025 (month 9 = October)
     
     setIsLoadingCurrentEntry(false);
     setIsLoadingUserData(false);
@@ -974,9 +984,14 @@ export default function Journal() {
   };
 
   const goToPreviousDay = () => {
+    const appStartDate = new Date(2025, 9, 1); // October 1, 2025
     const previousDay = new Date(selectedDate);
     previousDay.setDate(selectedDate.getDate() - 1);
-    setSelectedDate(previousDay);
+    
+    // Only allow navigation if previous day is not before October 1, 2025
+    if (previousDay >= appStartDate) {
+      setSelectedDate(previousDay);
+    }
   };
 
   const goToNextDay = () => {
@@ -1057,6 +1072,188 @@ export default function Journal() {
   const selectDateFromCalendar = (date: Date) => {
     setSelectedDate(date);
     closeCalendar();
+  };
+
+  // Navigate to a specific month
+  const navigateToMonth = (year: number, month: number) => {
+    const newDate = new Date(year, month, 1);
+    // Set to first day of month or today if today is in that month
+    const today = new Date();
+    if (year === today.getFullYear() && month === today.getMonth()) {
+      setSelectedDate(today);
+    } else {
+      // Get last day of month
+      const lastDay = new Date(year, month + 1, 0);
+      // Set to last day if it's in the past, otherwise first day
+      if (lastDay < today) {
+        setSelectedDate(lastDay);
+      } else {
+        setSelectedDate(new Date(year, month, 1));
+      }
+    }
+    setShowMonthSelector(false);
+  };
+
+  // Check if a month should be disabled
+  // App starts in October 2025, so disable all months before that
+  const isMonthDisabled = (year: number, month: number) => {
+    const today = new Date();
+    const monthDate = new Date(year, month, 1);
+    const todayMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    
+    // Disable future months
+    if (monthDate > todayMonth) {
+      return true;
+    }
+    
+    // Disable months before October 2025 (app start date)
+    const appStartDate = new Date(2025, 9, 1); // October 2025 (month 9 = October)
+    if (monthDate < appStartDate) {
+      return true;
+    }
+    
+    return false;
+  };
+
+  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 
+                      'July', 'August', 'September', 'October', 'November', 'December'];
+
+  // Calculate mood statistics by month
+  const getMoodStatsByMonth = () => {
+    const stats: {[key: string]: {label: string, Happy: number, Calm: number, Sad: number, Anxious: number, Tired: number}} = {};
+    
+    Object.entries(journalCache).forEach(([dateStr, entry]) => {
+      // Only count entries that have both a mood AND actual content/attachments
+      // This filters out mood-only entries that shouldn't have been saved
+      if (!entry.mood) return;
+      
+      // Check if entry has meaningful content
+      const hasContent = entry.content && stripHtml(entry.content).trim().length > 0;
+      const hasAttachments = entry.attachments && entry.attachments.length > 0;
+      
+      // Skip if entry only has mood but no content or attachments
+      if (!hasContent && !hasAttachments) return;
+      
+      const date = new Date(dateStr);
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      const monthLabel = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+      
+      if (!stats[monthKey]) {
+        stats[monthKey] = { label: monthLabel, Happy: 0, Calm: 0, Sad: 0, Anxious: 0, Tired: 0 };
+      }
+      
+      if (entry.mood in stats[monthKey]) {
+        (stats[monthKey] as any)[entry.mood]++;
+      }
+    });
+    
+    // Convert to array and sort by date (newest first)
+    return Object.entries(stats)
+      .map(([key, data]) => ({ key, ...data }))
+      .sort((a, b) => b.key.localeCompare(a.key));
+  };
+
+  // Generate SVG pie chart as rounded arcs with label positions and connecting lines
+  const generatePieChart = (stats: {Happy: number, Calm: number, Sad: number, Anxious: number, Tired: number}, size: number = 80) => {
+    const total = Object.values(stats).reduce((sum, count) => sum + count, 0);
+    if (total === 0) return { chart: null, labels: [], lines: [] };
+
+    const center = size / 2;
+    const radius = size / 2 - 8; // Inner radius for donut effect
+    const strokeWidth = 8; // Thickness of the arcs
+    let currentAngle = -Math.PI / 2; // Start at top
+    const arcs: React.ReactElement[] = [];
+    const lines: React.ReactElement[] = [];
+    const labels: Array<{mood: string, count: number, percentage: number, x: number, y: number}> = [];
+
+    moods.forEach((mood) => {
+      const count = stats[mood.label as keyof typeof stats] || 0;
+      if (count === 0) return;
+
+      const sliceAngle = (count / total) * 2 * Math.PI;
+      const endAngle = currentAngle + sliceAngle;
+      
+      // Calculate midpoint angle for label positioning
+      const midpointAngle = currentAngle + sliceAngle / 2;
+      const arcOuterRadius = radius + strokeWidth / 2; // Outer edge of the arc
+      const labelRadius = arcOuterRadius + 20; // Position labels further out
+      
+      // Line start point (on the arc outer edge)
+      const lineStartX = center + arcOuterRadius * Math.cos(midpointAngle);
+      const lineStartY = center + arcOuterRadius * Math.sin(midpointAngle);
+      
+      // Line end point (where the pill will be)
+      const lineEndX = center + labelRadius * Math.cos(midpointAngle);
+      const lineEndY = center + labelRadius * Math.sin(midpointAngle);
+      
+      // Add connecting line
+      lines.push(
+        <line
+          key={`line-${mood.label}`}
+          x1={lineStartX}
+          y1={lineStartY}
+          x2={lineEndX}
+          y2={lineEndY}
+          stroke={moodColors[mood.label]}
+          strokeWidth="1.5"
+          opacity="0.5"
+        />
+      );
+      
+      const percentage = Math.round((count / total) * 100);
+      labels.push({
+        mood: mood.label,
+        count,
+        percentage,
+        x: lineEndX,
+        y: lineEndY
+      });
+
+      const x1 = center + radius * Math.cos(currentAngle);
+      const y1 = center + radius * Math.sin(currentAngle);
+      const x2 = center + radius * Math.cos(endAngle);
+      const y2 = center + radius * Math.sin(endAngle);
+
+      // Special case: full circle (100% or only one mood)
+      let pathData: string;
+      if (Math.abs(sliceAngle - 2 * Math.PI) < 0.001) {
+        // Draw a full circle using two arc commands
+        pathData = [
+          `M ${x1} ${y1}`,
+          `A ${radius} ${radius} 0 1 1 ${center + radius * Math.cos(currentAngle + Math.PI)} ${center + radius * Math.sin(currentAngle + Math.PI)}`,
+          `A ${radius} ${radius} 0 1 1 ${x1} ${y1}`
+        ].join(' ');
+      } else {
+        const largeArcFlag = sliceAngle > Math.PI ? 1 : 0;
+        pathData = [
+          `M ${x1} ${y1}`,
+          `A ${radius} ${radius} 0 ${largeArcFlag} 1 ${x2} ${y2}`
+        ].join(' ');
+      }
+
+      arcs.push(
+        <path
+          key={mood.label}
+          d={pathData}
+          fill="none"
+          stroke={moodColors[mood.label]}
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+        />
+      );
+
+      currentAngle = endAngle;
+    });
+
+    return {
+      chart: (
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+          {arcs}
+          {lines}
+        </svg>
+      ),
+      labels
+    };
   };
 
   // Helper function to strip HTML tags and get plain text
@@ -1347,52 +1544,75 @@ export default function Journal() {
         <div className="flex flex-col items-center mb-8 sm:mb-16 calendar-navigation">
           <div className="flex items-center gap-2 sm:gap-4 mb-4 calendar-days-container w-full justify-center py-2">
             {/* Previous Day Arrow */}
-            <button
-              onClick={goToPreviousDay}
-              className="p-1.5 sm:p-3 rounded-full transition-all duration-200 cursor-pointer hover:scale-105 hover:bg-opacity-10 flex items-center justify-center flex-shrink-0"
-              style={{ 
-                backgroundColor: 'var(--muted)',
-                color: 'var(--foreground)',
-                minWidth: '40px',
-                minHeight: '40px'
-              }}
-              title="Previous day"
-            >
-              <svg className="w-3 h-3 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-            </button>
+            {(() => {
+              const appStartDate = new Date(2025, 9, 1); // October 1, 2025
+              const previousDay = new Date(selectedDate);
+              previousDay.setDate(selectedDate.getDate() - 1);
+              const isDisabled = previousDay < appStartDate;
+              
+              return (
+                <button
+                  onClick={goToPreviousDay}
+                  disabled={isDisabled}
+                  className="p-1.5 sm:p-3 rounded-full transition-all duration-200 flex items-center justify-center flex-shrink-0"
+                  style={{ 
+                    backgroundColor: 'var(--muted)',
+                    color: isDisabled ? 'var(--muted-foreground)' : 'var(--foreground)',
+                    minWidth: '40px',
+                    minHeight: '40px',
+                    opacity: isDisabled ? 0.5 : 1,
+                    cursor: isDisabled ? 'default' : 'pointer'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isDisabled) {
+                      e.currentTarget.style.transform = 'scale(1.05)';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'scale(1)';
+                  }}
+                  title={isDisabled ? "Cannot go before October 1, 2025" : "Previous day"}
+                >
+                  <svg className="w-3 h-3 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+              );
+            })()}
 
             {/* Calendar Days */}
             <div className="flex gap-1 sm:gap-3 items-center flex-shrink-0 overflow-visible">
               {getDaysInWeek().map((day, index) => {
                 const today = new Date();
+                const appStartDate = new Date(2025, 9, 1); // October 1, 2025
                 const isToday = day.toDateString() === today.toDateString();
                 const isSelected = day.toDateString() === selectedDate.toDateString();
                 const isCenter = isMobile ? index === 2 : index === 3; // Center position (selected date)
                 const isFuture = day > today;
+                const isBeforeAppStart = day < appStartDate;
                 const isPast = day < today;
+                const isDisabled = isFuture || isBeforeAppStart;
                 
                 return (
                   <button
                     key={index}
-                    onClick={() => !isFuture && setSelectedDate(day)}
-                    disabled={isFuture}
+                    onClick={() => !isDisabled && setSelectedDate(day)}
+                    disabled={isDisabled}
                     className={`${isCenter ? 'w-14 h-14 sm:w-20 sm:h-20' : 'w-11 h-11 sm:w-15 sm:h-15'} rounded-xl transition-all duration-300 flex flex-col items-center justify-center overflow-visible ${
-                      isFuture ? 'cursor-default' : 'cursor-pointer hover:scale-105'
+                      isDisabled ? 'cursor-default' : 'cursor-pointer hover:scale-105'
                     }`}
                     style={{
                       backgroundColor: isSelected ? 'var(--accent)' : 'transparent',
                       border: isSelected ? '2px solid var(--border)' : '1px solid var(--border)',
                       boxShadow: isSelected ? 'var(--shadow-lg)' : isCenter ? 'var(--shadow-md)' : 'none',
-                      opacity: isFuture ? 0.5 : isPast ? 0.8 : 1,
+                      opacity: isDisabled ? 0.5 : isPast ? 0.8 : 1,
                       transform: 'scale(1)'
                     }}
                   >
                     <span 
                       className="text-xs font-medium"
                       style={{ 
-                        color: isFuture ? 'var(--muted-foreground)' : isPast ? 'var(--foreground)' : 'var(--foreground)'
+                        color: isDisabled ? 'var(--muted-foreground)' : isPast ? 'var(--foreground)' : 'var(--foreground)'
                       }}
                     >
                       {day.toLocaleDateString('en-US', { weekday: 'short' })}
@@ -1400,7 +1620,7 @@ export default function Journal() {
                     <span 
                       className={`font-semibold ${isCenter ? 'text-lg' : 'text-base'}`}
                       style={{ 
-                        color: isFuture ? 'var(--muted-foreground)' : isPast ? 'var(--foreground)' : 'var(--foreground)'
+                        color: isDisabled ? 'var(--muted-foreground)' : isPast ? 'var(--foreground)' : 'var(--foreground)'
                       }}
                     >
                       {day.getDate()}
@@ -1661,21 +1881,39 @@ export default function Journal() {
           >
             {/* Calendar Header */}
             <div className="flex items-center justify-between mb-4 sm:mb-6">
-              <h2 
-                className="text-lg sm:text-xl font-semibold"
-                style={{ color: 'var(--foreground)' }}
+              <button
+                onClick={() => setShowMonthSelector(true)}
+                className="text-lg sm:text-xl font-semibold px-4 py-2 rounded-lg transition-all cursor-pointer hover:scale-105"
+                style={{ 
+                  color: 'var(--foreground)',
+                  backgroundColor: 'var(--muted)',
+                  border: '1px solid var(--border)'
+                }}
               >
                 {selectedDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-              </h2>
-              <button
-                onClick={closeCalendar}
-                className="p-2 rounded-full hover:bg-opacity-10 transition-colors"
-                style={{ color: 'var(--muted-foreground)' }}
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
               </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowMoodAnalytics(true)}
+                  className="p-2 rounded-full hover:bg-opacity-10 transition-all hover:scale-110 cursor-pointer"
+                  style={{ color: 'var(--muted-foreground)' }}
+                  title="View mood analytics"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
+                  </svg>
+                </button>
+                <button
+                  onClick={closeCalendar}
+                  className="p-2 rounded-full hover:bg-opacity-10 transition-all hover:scale-110 cursor-pointer"
+                  style={{ color: 'var(--muted-foreground)' }}
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
             </div>
 
             {/* Search Bar */}
@@ -1707,7 +1945,7 @@ export default function Journal() {
 
             {/* Search Results */}
             {searchQuery && (
-              <div className="mb-4">
+              <div className="mb-4 search-results-appear">
                 <h3 
                   className="text-sm font-medium mb-3"
                   style={{ color: 'var(--foreground)' }}
@@ -1724,10 +1962,11 @@ export default function Journal() {
                           setSelectedDate(date);
                           closeCalendar();
                         }}
-                        className="w-full p-2 sm:p-3 rounded-lg text-left transition-all duration-200 hover:shadow-md cursor-pointer"
+                        className="w-full p-2 sm:p-3 rounded-lg text-left transition-all duration-200 hover:shadow-md cursor-pointer search-result-item"
                         style={{ 
                           backgroundColor: 'var(--muted)',
-                          color: 'var(--foreground)'
+                          color: 'var(--foreground)',
+                          animationDelay: `${index * 50}ms`
                         }}
                         onMouseEnter={(e) => {
                           e.currentTarget.style.backgroundColor = 'var(--accent)';
@@ -1794,20 +2033,23 @@ export default function Journal() {
                 const mood = calendarMoods[dayStr];
                 const isToday = day.toDateString() === new Date().toDateString();
                 const isSelected = day.toDateString() === selectedDate.toDateString();
+                const appStartDate = new Date(2025, 9, 1); // October 1, 2025
                 const isFuture = day > new Date();
+                const isBeforeAppStart = day < appStartDate;
+                const isDisabled = isFuture || isBeforeAppStart;
                 
                 return (
                   <button
                     key={index}
-                    onClick={() => !isFuture && selectDateFromCalendar(day)}
-                    disabled={isFuture}
+                    onClick={() => !isDisabled && selectDateFromCalendar(day)}
+                    disabled={isDisabled}
                     className={`relative h-8 w-8 sm:h-10 sm:w-10 rounded-lg transition-all duration-200 flex flex-col items-center justify-center ${
-                      isFuture ? 'cursor-default opacity-50' : 'cursor-pointer hover:scale-105'
+                      isDisabled ? 'cursor-default opacity-50' : 'cursor-pointer hover:scale-105'
                     }`}
                     style={{
                       backgroundColor: isSelected ? 'var(--accent)' : 'transparent',
                       border: isToday ? '2px solid var(--primary)' : '1px solid transparent',
-                      color: isFuture ? 'var(--muted-foreground)' : 'var(--foreground)'
+                      color: isDisabled ? 'var(--muted-foreground)' : 'var(--foreground)'
                     }}
                   >
                     <span className="text-xs sm:text-sm font-medium mb-0.5 sm:mb-1">{day.getDate()}</span>
@@ -1848,6 +2090,264 @@ export default function Journal() {
                 ))}
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Month Selector Modal */}
+      {showMonthSelector && (
+        <div 
+          className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-[60]"
+          onClick={() => setShowMonthSelector(false)}
+          style={{ backgroundColor: 'rgba(0, 0, 0, 0.8)' }}
+        >
+          <div 
+            className="bg-white rounded-2xl p-4 sm:p-6 max-w-md w-full mx-2 sm:mx-4"
+            style={{ 
+              backgroundColor: 'var(--card)',
+              border: '1px solid var(--border)',
+              boxShadow: 'var(--shadow-2xl)'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between mb-4 sm:mb-6">
+              <h2 
+                className="text-lg sm:text-xl font-semibold"
+                style={{ color: 'var(--foreground)' }}
+              >
+                Select Month
+              </h2>
+              <button
+                onClick={() => setShowMonthSelector(false)}
+                className="p-2 rounded-full hover:bg-opacity-10 transition-colors"
+                style={{ color: 'var(--muted-foreground)' }}
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Year Selection */}
+            <div className="mb-4">
+              <div className="flex items-center justify-center gap-2 mb-4">
+                <button
+                  onClick={() => {
+                    const currentYear = selectedDate.getFullYear();
+                    if (currentYear > 2025) {
+                      navigateToMonth(currentYear - 1, selectedDate.getMonth());
+                    }
+                  }}
+                  className="p-1 rounded-full hover:bg-opacity-10 transition-colors"
+                  style={{ 
+                    color: selectedDate.getFullYear() <= 2025 ? 'var(--muted)' : 'var(--muted-foreground)'
+                  }}
+                  disabled={selectedDate.getFullYear() <= 2025}
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+                <span 
+                  className="text-base font-semibold px-4"
+                  style={{ color: 'var(--foreground)' }}
+                >
+                  {selectedDate.getFullYear()}
+                </span>
+                <button
+                  onClick={() => {
+                    const currentYear = selectedDate.getFullYear();
+                    const today = new Date();
+                    if (currentYear < today.getFullYear()) {
+                      navigateToMonth(currentYear + 1, selectedDate.getMonth());
+                    }
+                  }}
+                  className="p-1 rounded-full hover:bg-opacity-10 transition-colors"
+                  style={{ 
+                    color: selectedDate.getFullYear() >= new Date().getFullYear() ? 'var(--muted)' : 'var(--muted-foreground)'
+                  }}
+                  disabled={selectedDate.getFullYear() >= new Date().getFullYear()}
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Months Grid */}
+            <div className="grid grid-cols-3 gap-2 sm:gap-3">
+              {monthNames.map((monthName, index) => {
+                const year = selectedDate.getFullYear();
+                const isDisabled = isMonthDisabled(year, index);
+                const isCurrentMonth = year === selectedDate.getFullYear() && index === selectedDate.getMonth();
+                
+                return (
+                  <button
+                    key={index}
+                    onClick={() => !isDisabled && navigateToMonth(year, index)}
+                    disabled={isDisabled}
+                    className={`p-3 sm:p-4 rounded-lg text-sm sm:text-base font-medium transition-all ${
+                      isDisabled 
+                        ? 'opacity-40 cursor-not-allowed' 
+                        : 'cursor-pointer hover:scale-105 hover:shadow-md'
+                    }`}
+                    style={{
+                      backgroundColor: isCurrentMonth 
+                        ? 'var(--primary)' 
+                        : isDisabled 
+                          ? 'var(--muted)' 
+                          : 'var(--muted)',
+                      color: isCurrentMonth 
+                        ? 'white' 
+                        : isDisabled 
+                          ? 'var(--muted-foreground)' 
+                          : 'var(--foreground)',
+                      border: isCurrentMonth ? 'none' : '1px solid transparent'
+                    }}
+                  >
+                    {monthName}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mood Analytics Modal */}
+      {showMoodAnalytics && (
+        <div 
+          className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-50"
+          onClick={() => setShowMoodAnalytics(false)}
+          style={{ backgroundColor: 'rgba(0, 0, 0, 0.8)' }}
+        >
+          <div 
+            className="relative max-w-4xl max-h-[90vh] w-full mx-4 bg-white rounded-2xl p-6 overflow-y-auto"
+            style={{ 
+              backgroundColor: 'var(--card)',
+              border: '1px solid var(--border)',
+              boxShadow: 'var(--shadow-2xl)'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between mb-6">
+              <h2 
+                className="text-2xl font-semibold"
+                style={{ color: 'var(--foreground)' }}
+              >
+                Mood Analytics
+              </h2>
+              <button
+                onClick={() => setShowMoodAnalytics(false)}
+                className="p-2 rounded-full hover:bg-opacity-10 transition-colors"
+                style={{ color: 'var(--muted-foreground)' }}
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Months Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {getMoodStatsByMonth().map((monthData) => {
+                const { label, key, Happy, Calm, Sad, Anxious, Tired } = monthData;
+                const moodStats = { Happy, Calm, Sad, Anxious, Tired };
+                const total = Happy + Calm + Sad + Anxious + Tired;
+                
+                if (total === 0) return null;
+
+                return (
+                  <div
+                    key={key}
+                    className="p-4 rounded-lg border"
+                    style={{ 
+                      backgroundColor: 'var(--muted)',
+                      borderColor: 'var(--border)'
+                    }}
+                  >
+                    <h3 
+                      className="text-lg font-semibold mb-3 text-center"
+                      style={{ color: 'var(--foreground)' }}
+                    >
+                      {label}
+                    </h3>
+                    
+                    {/* Pie Chart with Labels */}
+                    <div className="flex justify-center relative" style={{ minHeight: '200px', padding: '30px' }}>
+                      {(() => {
+                        const chartData = generatePieChart(moodStats, 120);
+                        if (!chartData.chart) return null;
+                        
+                        return (
+                          <div className="relative" style={{ width: '180px', height: '180px', margin: '0 auto' }}>
+                            <div style={{ position: 'absolute', left: '30px', top: '30px' }}>
+                              {chartData.chart}
+                            </div>
+                            {chartData.labels.map((labelData) => (
+                              <div
+                                key={labelData.mood}
+                                className="absolute flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap"
+                                style={{
+                                  left: `${labelData.x + 30}px`,
+                                  top: `${labelData.y + 30}px`,
+                                  transform: 'translate(-50%, -50%)',
+                                  backgroundColor: moodColors[labelData.mood],
+                                  color: 'white',
+                                  boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                                }}
+                              >
+                                <span>{labelData.percentage}%</span>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    {/* Mood Legend */}
+                    <div className="border-t pt-3 mt-3" style={{ borderColor: 'var(--border)' }}>
+                      <div className="flex flex-wrap justify-center gap-3">
+                        {moods.map((mood) => {
+                          const count = moodStats[mood.label as keyof typeof moodStats] || 0;
+                          if (count === 0) return null;
+                          
+                          return (
+                            <div key={mood.label} className="flex items-center gap-1.5">
+                              <div
+                                className="w-3 h-3 rounded-full flex-shrink-0"
+                                style={{ backgroundColor: moodColors[mood.label] }}
+                              />
+                              <span 
+                                className="text-xs"
+                                style={{ color: 'var(--muted-foreground)' }}
+                              >
+                                {mood.label}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Empty State */}
+            {getMoodStatsByMonth().length === 0 && (
+              <div className="text-center py-12">
+                <p 
+                  className="text-lg"
+                  style={{ color: 'var(--muted-foreground)' }}
+                >
+                  No mood data available yet. Start journaling to see your mood analytics!
+                </p>
+              </div>
+            )}
           </div>
         </div>
       )}

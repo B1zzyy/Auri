@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Journal",
+  title: "Auri - Daily Journal",
   description: "A minimalist daily journal for your thoughts",
 };
 

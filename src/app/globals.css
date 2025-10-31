@@ -360,3 +360,23 @@ body {
   animation: editorEnter 280ms ease-out both;
   will-change: opacity, transform;
 }
+
+/* Search results animation */
+@keyframes searchResultsEnter {
+  0% {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.search-results-appear {
+  animation: searchResultsEnter 300ms ease-out both;
+}
+
+.search-result-item {
+  animation: searchResultsEnter 300ms ease-out both;
+}
