@@ -1894,7 +1894,13 @@ export default function Journal() {
               </button>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setShowMoodAnalytics(true)}
+                  onClick={async () => {
+                    // Refresh cache from database to ensure we have latest data
+                    if (user) {
+                      await loadAllJournalEntries(user.id);
+                    }
+                    setShowMoodAnalytics(true);
+                  }}
                   className="p-2 rounded-full hover:bg-opacity-10 transition-all hover:scale-110 cursor-pointer"
                   style={{ color: 'var(--muted-foreground)' }}
                   title="View mood analytics"
