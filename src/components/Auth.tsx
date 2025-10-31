@@ -19,6 +19,8 @@ export default function Auth({ onAuthSuccess }: AuthProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<{[key: string]: string}>({});
+  const [showVerificationPopup, setShowVerificationPopup] = useState(false);
+  const [signupEmail, setSignupEmail] = useState('');
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -75,7 +77,14 @@ export default function Auth({ onAuthSuccess }: AuthProps) {
         });
         if (error) throw error;
         
-        setError('Check your email for the confirmation link!');
+        // Show verification popup instead of error message
+        setSignupEmail(email);
+        setShowVerificationPopup(true);
+        // Clear form
+        setFirstName('');
+        setEmail('');
+        setPassword('');
+        setConfirmPassword('');
       } else {
         const { error } = await supabase.auth.signInWithPassword({
           email,
@@ -163,7 +172,7 @@ export default function Auth({ onAuthSuccess }: AuthProps) {
                 placeholder="Password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full p-4 pr-12 rounded-lg border-none outline-none text-lg"
+                className="w-full p-4 pr-10 sm:pr-12 rounded-lg border-none outline-none text-lg"
                 style={{ 
                   backgroundColor: 'var(--input)',
                   color: 'var(--foreground)',
@@ -173,8 +182,10 @@ export default function Auth({ onAuthSuccess }: AuthProps) {
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-4 top-1/2 transform -translate-y-1/2"
-                style={{ color: 'var(--muted-foreground)' }}
+                className="absolute right-2 sm:right-4 top-1/2 transform -translate-y-1/2 flex items-center justify-center"
+                style={{ 
+                  color: 'var(--muted-foreground)'
+                }}
               >
                 {showPassword ? (
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -205,7 +216,7 @@ export default function Auth({ onAuthSuccess }: AuthProps) {
                     placeholder="Confirm Password"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="w-full p-4 pr-12 rounded-lg border-none outline-none text-lg"
+                    className="w-full p-4 pr-10 sm:pr-12 rounded-lg border-none outline-none text-lg"
                     style={{ 
                       backgroundColor: 'var(--input)',
                       color: 'var(--foreground)',
@@ -215,8 +226,10 @@ export default function Auth({ onAuthSuccess }: AuthProps) {
                   <button
                     type="button"
                     onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    className="absolute right-4 top-1/2 transform -translate-y-1/2"
-                    style={{ color: 'var(--muted-foreground)' }}
+                    className="absolute right-2 sm:right-4 top-1/2 transform -translate-y-1/2 flex items-center justify-center"
+                    style={{ 
+                      color: 'var(--muted-foreground)'
+                    }}
                   >
                     {showConfirmPassword ? (
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -249,7 +262,7 @@ export default function Auth({ onAuthSuccess }: AuthProps) {
               </div>
             )}
             
-            {error && (
+            {error && !showVerificationPopup && (
               <p 
                 className="text-center text-sm"
                 style={{ color: 'var(--destructive)' }}
@@ -282,6 +295,112 @@ export default function Auth({ onAuthSuccess }: AuthProps) {
           </div>
         </div>
       </div>
+
+      {/* Email Verification Popup */}
+      {showVerificationPopup && (
+        <div 
+          className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-50"
+          onClick={() => setShowVerificationPopup(false)}
+          style={{ backgroundColor: 'rgba(0, 0, 0, 0.8)' }}
+        >
+          <div 
+            className="bg-white rounded-2xl p-6 sm:p-8 max-w-md w-full mx-4"
+            style={{ 
+              backgroundColor: 'var(--card)',
+              border: '1px solid var(--border)',
+              boxShadow: 'var(--shadow-2xl)'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-center mb-6">
+              <div className="mb-4 flex justify-center">
+                <div 
+                  className="w-16 h-16 rounded-full flex items-center justify-center"
+                  style={{ backgroundColor: 'var(--muted)' }}
+                >
+                  <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: 'var(--primary)' }}>
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                  </svg>
+                </div>
+              </div>
+              <h2 
+                className="text-2xl font-semibold mb-3"
+                style={{ color: 'var(--foreground)' }}
+              >
+                Check Your Email
+              </h2>
+              <p 
+                className="text-base mb-2"
+                style={{ color: 'var(--muted-foreground)' }}
+              >
+                We've sent a verification link to
+              </p>
+              <p 
+                className="text-base font-medium mb-4"
+                style={{ color: 'var(--foreground)' }}
+              >
+                {signupEmail}
+              </p>
+              <p 
+                className="text-sm mb-6"
+                style={{ color: 'var(--muted-foreground)' }}
+              >
+                Please click the link in the email to verify your account and complete the sign-up process.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <button
+                onClick={() => {
+                  // Get email provider and redirect to their mail website
+                  const emailDomain = signupEmail.split('@')[1]?.toLowerCase() || '';
+                  let mailUrl = '';
+                  
+                  if (emailDomain.includes('gmail')) {
+                    mailUrl = 'https://mail.google.com';
+                  } else if (emailDomain.includes('yahoo')) {
+                    mailUrl = 'https://mail.yahoo.com';
+                  } else if (emailDomain.includes('outlook') || emailDomain.includes('hotmail') || emailDomain.includes('live') || emailDomain.includes('msn')) {
+                    mailUrl = 'https://outlook.live.com';
+                  } else if (emailDomain.includes('icloud') || emailDomain.includes('me.com')) {
+                    mailUrl = 'https://www.icloud.com/mail';
+                  } else if (emailDomain.includes('protonmail') || emailDomain.includes('proton')) {
+                    mailUrl = 'https://mail.proton.me';
+                  } else {
+                    // Default to generic mail link or show a message
+                    mailUrl = `https://${emailDomain}`;
+                  }
+                  
+                  window.open(mailUrl, '_blank');
+                }}
+                className="w-full p-4 rounded-lg text-base font-medium transition-all hover:scale-105 cursor-pointer"
+                style={{ 
+                  backgroundColor: 'var(--primary)',
+                  color: 'var(--primary-foreground)'
+                }}
+              >
+                Open Mail App
+              </button>
+              
+              <button
+                onClick={() => {
+                  setShowVerificationPopup(false);
+                  setIsSignUp(false);
+                  setError('');
+                }}
+                className="w-full p-4 rounded-lg text-base font-medium transition-all hover:bg-opacity-90 cursor-pointer"
+                style={{ 
+                  backgroundColor: 'var(--muted)',
+                  color: 'var(--foreground)',
+                  border: '1px solid var(--border)'
+                }}
+              >
+                Sign In
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
