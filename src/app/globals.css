@@ -380,3 +380,19 @@ body {
 .search-result-item {
   animation: searchResultsEnter 300ms ease-out both;
 }
+
+/* Auth form transition */
+@keyframes authFormEnter {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.auth-form-transition {
+  animation: authFormEnter 350ms ease-out both;
+}

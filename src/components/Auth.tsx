@@ -103,6 +103,15 @@ export default function Auth({ onAuthSuccess }: AuthProps) {
   return (
     <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'var(--background)' }}>
       <div className="max-w-md w-full p-8">
+        {/* Logo */}
+        <div className="flex justify-center mb-6">
+          <img 
+            src="/logo.png" 
+            alt="Auri Logo" 
+            className="h-12 sm:h-16 w-auto"
+          />
+        </div>
+        
         <div 
           className="rounded-2xl shadow-sm p-8"
           style={{ 
@@ -111,13 +120,14 @@ export default function Auth({ onAuthSuccess }: AuthProps) {
           }}
         >
           <h1 
-            className="text-3xl font-light text-center mb-8"
+            key={`title-${isSignUp}`}
+            className="text-3xl font-light text-center mb-8 auth-form-transition"
             style={{ color: 'var(--foreground)' }}
           >
             {isSignUp ? 'Create Account' : 'Welcome Back'}
           </h1>
           
-          <form onSubmit={handleAuth} className="space-y-6">
+          <form key={`form-${isSignUp}`} onSubmit={handleAuth} className="space-y-6 auth-form-transition">
             {isSignUp && (
               <div>
                 <input
@@ -287,10 +297,19 @@ export default function Auth({ onAuthSuccess }: AuthProps) {
           <div className="text-center mt-6">
             <button
               onClick={() => setIsSignUp(!isSignUp)}
-              className="text-sm transition-colors"
-              style={{ color: 'var(--muted-foreground)' }}
+              className="text-sm transition-colors cursor-pointer"
             >
-              {isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
+              {isSignUp ? (
+                <>
+                  <span style={{ color: 'var(--muted-foreground)' }}>Already have an account? </span>
+                  <span style={{ color: 'var(--primary)' }}>Sign in</span>
+                </>
+              ) : (
+                <>
+                  <span style={{ color: 'var(--muted-foreground)' }}>Don't have an account? </span>
+                  <span style={{ color: 'var(--primary)' }}>Sign up</span>
+                </>
+              )}
             </button>
           </div>
         </div>
